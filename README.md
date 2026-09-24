@@ -1,24 +1,16 @@
-# Balaji Automobiles CRM V2 — Shared Cloud Version
-
-This version uses Supabase so enquiries can be shared between the showroom PC and phones.
+# Balaji Automobiles CRM V3
+Complete static Supabase CRM for Balaji Automobiles, Susner.
 
 ## Setup
-1. Create a Supabase project.
-2. Open SQL Editor and run `supabase.sql`.
-3. Create your first account in the app after putting the Supabase URL/key in `config.js`.
-4. In Supabase Table Editor -> profiles, change that first user's role from `staff` to `admin`.
-5. Put the values in `config.js`:
-   - SUPABASE_URL
-   - SUPABASE_ANON_KEY
-6. Upload all files to the GitHub repository root.
-7. GitHub Pages will publish the app.
+1. Run `supabase.sql` in Supabase SQL Editor.
+2. Create your first user in Supabase Authentication.
+3. Promote that user's profile to owner:
+`update public.profiles set role='owner' where id=(select id from auth.users where email='YOUR_OWNER_EMAIL');`
+4. Put your Supabase Publishable Key in `config.js`.
+5. Never put a Supabase Secret/service_role key in frontend code.
+6. Upload all files to the root of a GitHub repository.
+7. Enable GitHub Pages from the repository Settings > Pages.
+8. Open the GitHub Pages URL on computer and phone.
 
-## Files
-- index.html
-- app.js
-- style.css
-- config.js
-- supabase.sql
-
-## Important
-The anon key is intended for browser use; security comes from Supabase Row Level Security policies. Never put a Supabase service-role/secret key in this project.
+## Features
+Owner/Staff login, cloud enquiries, employee assignment, today's and overdue follow-ups, click-to-call, follow-up history, owner employee metrics, reports and CSV export. Data is stored in Supabase so it is shared across devices.

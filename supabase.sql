@@ -1,72 +1,21 @@
--- BALAJI AUTOMOBILES CRM V2 - SUPABASE SETUP
--- Run this whole script in Supabase SQL Editor.
-
-create table if not exists public.profiles (
-  id uuid primary key references auth.users(id) on delete cascade,
-  full_name text,
-  role text not null default 'staff' check (role in ('admin','staff')),
-  created_at timestamptz not null default now()
-);
-
-create table if not exists public.enquiries (
-  id uuid primary key default gen_random_uuid(),
-  customer_name text not null,
-  mobile text not null,
-  village text,
-  model text,
-  payment text not null default 'Cash' check (payment in ('Cash','Finance')),
-  exchange text not null default 'No' check (exchange in ('Yes','No')),
-  enquiry_date date not null default current_date,
-  followup_date date,
-  delivery_date date,
-  status text not null default 'New' check (status in ('New','Follow-up','Interested','Converted','Lost')),
-  notes text,
-  created_by uuid references auth.users(id),
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-alter table public.profiles enable row level security;
-alter table public.enquiries enable row level security;
-
-drop policy if exists "profiles read own" on public.profiles;
-create policy "profiles read own" on public.profiles
-for select to authenticated using (id = auth.uid());
-
-drop policy if exists "enquiries authenticated read" on public.enquiries;
-create policy "enquiries authenticated read" on public.enquiries
-for select to authenticated using (true);
-
-drop policy if exists "enquiries authenticated insert" on public.enquiries;
-create policy "enquiries authenticated insert" on public.enquiries
-for insert to authenticated with check (created_by = auth.uid());
-
-drop policy if exists "enquiries authenticated update" on public.enquiries;
-create policy "enquiries authenticated update" on public.enquiries
-for update to authenticated using (true) with check (true);
-
-drop policy if exists "enquiries authenticated delete" on public.enquiries;
-create policy "enquiries authenticated delete" on public.enquiries
-for delete to authenticated using (true);
-
--- Automatically create a staff profile whenever a new Auth user signs up.
-create or replace function public.handle_new_user()
-returns trigger
-language plpgsql
-security definer set search_path = public
-as $$
-begin
-  insert into public.profiles (id, full_name, role)
-  values (new.id, coalesce(new.raw_user_meta_data->>'full_name',''), 'staff')
-  on conflict (id) do nothing;
-  return new;
-end;
-$$;
-
-drop trigger if exists on_auth_user_created on auth.users;
-create trigger on_auth_user_created
-after insert on auth.users
-for each row execute procedure public.handle_new_user();
-
--- After creating your first account in the app, make it admin:
--- UPDATE public.profiles SET role='admin' WHERE id='YOUR_USER_UUID';
+create extension if not exists pgcrypto;
+create table if not exists public.profiles(id uuid primary key references auth.users(id) on delete cascade,full_name text,role text not null default 'staff' check(role in('owner','staff')),active boolean not null default true,created_at timestamptz not null default now());
+create table if not exists public.enquiries(id uuid primary key default gen_random_uuid(),enquiry_date date not null default current_date,customer_name text not null,mobile text not null,village text,vehicle text not null,purchase_mode text,expected_delivery date,lead_source text,status text not null default 'New',next_follow_up date,next_follow_up_time time,assigned_to uuid references public.profiles(id) on delete set null,created_by uuid not null references public.profiles(id),estimated_value numeric,exchange_required boolean not null default false,exchange_vehicle text,notes text,last_contacted_at timestamptz,created_at timestamptz not null default now(),updated_at timestamptz not null default now());
+create table if not exists public.follow_ups(id uuid primary key default gen_random_uuid(),enquiry_id uuid not null references public.enquiries(id) on delete cascade,staff_id uuid not null references public.profiles(id),follow_up_date date not null default current_date,follow_up_time time,status text not null,notes text,next_follow_up_date date,next_follow_up_time time,created_at timestamptz not null default now());
+create index if not exists enquiries_due_idx on public.enquiries(next_follow_up);create index if not exists enquiries_assigned_idx on public.enquiries(assigned_to);
+create or replace function public.is_owner() returns boolean language sql security definer set search_path=public stable as $$select exists(select 1 from public.profiles where id=auth.uid() and role='owner' and active=true)$$;
+create or replace function public.new_profile() returns trigger language plpgsql security definer set search_path=public as $$begin insert into public.profiles(id,full_name) values(new.id,coalesce(new.raw_user_meta_data->>'full_name',split_part(new.email,'@',1))) on conflict(id) do nothing;return new;end$$;
+drop trigger if exists on_auth_user_created on auth.users;create trigger on_auth_user_created after insert on auth.users for each row execute procedure public.new_profile();
+alter table public.profiles enable row level security;alter table public.enquiries enable row level security;alter table public.follow_ups enable row level security;
+drop policy if exists profiles_read on public.profiles;create policy profiles_read on public.profiles for select to authenticated using(id=auth.uid() or public.is_owner());
+drop policy if exists profiles_update on public.profiles;create policy profiles_update on public.profiles for update to authenticated using(public.is_owner()) with check(public.is_owner());
+drop policy if exists enquiries_read on public.enquiries;create policy enquiries_read on public.enquiries for select to authenticated using(public.is_owner() or assigned_to=auth.uid() or created_by=auth.uid());
+drop policy if exists enquiries_insert on public.enquiries;create policy enquiries_insert on public.enquiries for insert to authenticated with check(created_by=auth.uid() and (public.is_owner() or assigned_to is null or assigned_to=auth.uid()));
+drop policy if exists enquiries_update on public.enquiries;create policy enquiries_update on public.enquiries for update to authenticated using(public.is_owner() or assigned_to=auth.uid() or created_by=auth.uid()) with check(public.is_owner() or assigned_to=auth.uid() or created_by=auth.uid());
+drop policy if exists enquiries_delete on public.enquiries;create policy enquiries_delete on public.enquiries for delete to authenticated using(public.is_owner());
+drop policy if exists followups_read on public.follow_ups;create policy followups_read on public.follow_ups for select to authenticated using(public.is_owner() or staff_id=auth.uid() or exists(select 1 from public.enquiries e where e.id=follow_ups.enquiry_id and(e.assigned_to=auth.uid() or e.created_by=auth.uid())));
+drop policy if exists followups_insert on public.follow_ups;create policy followups_insert on public.follow_ups for insert to authenticated with check(staff_id=auth.uid() and exists(select 1 from public.enquiries e where e.id=follow_ups.enquiry_id and(public.is_owner() or e.assigned_to=auth.uid() or e.created_by=auth.uid())));
+drop policy if exists followups_update on public.follow_ups;create policy followups_update on public.follow_ups for update to authenticated using(public.is_owner() or staff_id=auth.uid()) with check(public.is_owner() or staff_id=auth.uid());
+drop policy if exists followups_delete on public.follow_ups;create policy followups_delete on public.follow_ups for delete to authenticated using(public.is_owner());
+-- After creating your first Auth user, promote it:
+-- update public.profiles set role='owner' where id=(select id from auth.users where email='YOUR_OWNER_EMAIL');
