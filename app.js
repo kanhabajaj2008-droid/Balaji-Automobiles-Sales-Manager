@@ -1,4 +1,4 @@
-const sb=window.supabase.createClient(window.SUPABASE_URL,window.SUPABASE_ANON_KEY);
+const sb=window.supabase.createClient(window.SUPABASE_URL,window.SUPABASE_PUBLISHABLE_KEY);
 let user=null,profile=null,page="dashboard",editingId=null,enquiries=[];
 
 const $=s=>document.querySelector(s), today=()=>new Date().toISOString().slice(0,10);
